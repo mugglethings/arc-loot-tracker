@@ -1,0 +1,434 @@
+{
+    "Dam": {
+        "locations": {
+            "None": {
+                "tier": "None",
+                "category": []
+            },
+            "Control Tower": {
+                "tier": "Red",
+                "category": [
+                    "Technological",
+                    "Security"
+                ]
+            },
+            "Electrical Substation": {
+                "tier": "None",
+                "category": [
+                    "Electrical"
+                ]
+            },
+            "Hydroponic Dome Complex": {
+                "tier": "Red",
+                "category": [
+                    "Nature",
+                    "Industrial",
+                    "Security"
+                ]
+            },
+            "Old Battleground": {
+                "tier": "None",
+                "category": [
+                    "Arc"
+                ]
+            },
+            "Power Generation Complex": {
+                "tier": "Yellow",
+                "category": [
+                    "Electrical",
+                    "Industrial"
+                ]
+            },
+            "Primary Facility": {
+                "tier": "None",
+                "category": [
+                    "Mechanical",
+                    "Industrial"
+                ]
+            },
+            "Research And Administration": {
+                "tier": "Red",
+                "category": [
+                    "Commercial",
+                    "Technological"
+                ]
+            },
+            "Scrap Yard": {
+                "tier": "None",
+                "category": [
+                    "Mechanical",
+                    "Industrial"
+                ]
+            },
+            "Testing Annex": {
+                "tier": "Yellow",
+                "category": [
+                    "Medical",
+                    "Commercial"
+                ]
+            },
+            "Water Treatment Control": {
+                "tier": "Yellow",
+                "category": [
+                    "Industrial",
+                    "Mechanical"
+                ]
+            }
+        }
+    },
+    "Buried": {
+        "locations": {
+            "None": {
+                "tier": "None",
+                "category": []
+            },
+            "Galleria": {
+                "tier": "None",
+                "category": [
+                    "Commercial"
+                ]
+            },
+            "Grandioso Apartments": {
+                "tier": "Yellow",
+                "category": [
+                    "Residential"
+                ]
+            },
+            "Hospital": {
+                "tier": "Red",
+                "category": [
+                    "Medical"
+                ]
+            },
+            "Library": {
+                "tier": "Yellow",
+                "category": [
+                    "Old World",
+                    "Commercial"
+                ]
+            },
+            "Marano Park": {
+                "tier": "None",
+                "category": [
+                    "Nature"
+                ]
+            },
+            "Parking Garage": {
+                "tier": "None",
+                "category": [
+                    "Mechanical"
+                ]
+            },
+            "Piazza Arbusto": {
+                "tier": "None",
+                "category": [
+                    "Medical",
+                    "Commercial"
+                ]
+            },
+            "Plaza Rosa": {
+                "tier": "Yellow",
+                "category": [
+                    "Medical",
+                    "Commercial"
+                ]
+            },
+            "Red Tower": {
+                "tier": "None",
+                "category": [
+                    "Residential"
+                ]
+            },
+            "Research": {
+                "tier": "Yellow",
+                "category": [
+                    "Medical",
+                    "Technological"
+                ]
+            },
+            "Santa Maria Houses": {
+                "tier": "None",
+                "category": [
+                    "Residential",
+                    "Old World"
+                ]
+            },
+            "Space Travel": {
+                "tier": "Red",
+                "category": [
+                    "Commercial",
+                    "Technological"
+                ]
+            },
+            "Town Hall": {
+                "tier": "Red",
+                "category": [
+                    "Old World"
+                ]
+            }
+        }
+    },
+    "Space": {
+        "locations": {
+            "None": {
+                "tier": "None",
+                "category": []
+            },
+            "Arrival Building": {
+                "tier": "Red",
+                "category": [
+                    "Commercial",
+                    "Technological"
+                ]
+            },
+            "Container Storage": {
+                "tier": "Red",
+                "category": [
+                    "Mechanical",
+                    "Industrial"
+                ]
+            },
+            "Control Tower": {
+                "tier": "Red",
+                "category": [
+                    "Technological",
+                    "Commercial"
+                ]
+            },
+            "Departure Building": {
+                "tier": "Red",
+                "category": [
+                    "Commercial",
+                    "Technological"
+                ]
+            },
+            "Fuel Control": {
+                "tier": "None",
+                "category": [
+                    "Mechanical",
+                    "Electrical"
+                ]
+            },
+            "Launch Towers": {
+                "tier": "Red",
+                "category": [
+                    "Technological",
+                    "Security"
+                ]
+            },
+            "Rocket Assembly": {
+                "tier": "Red",
+                "category": [
+                    "Exodus",
+                    "Industrial"
+                ]
+            },
+            "Shipping Warehouse": {
+                "tier": "None",
+                "category": [
+                    "Industrial",
+                    "Mechanical"
+                ]
+            },
+            "Trench Tower": {
+                "tier": "Yellow",
+                "category": [
+                    "Technological"
+                ]
+            },
+            "Vehicle Maintenance": {
+                "tier": "Yellow",
+                "category": [
+                    "Mechanical",
+                    "Industrial"
+                ]
+            }
+        }
+    },
+    "Blue": {
+        "locations": {
+            "None": {
+                "tier": "None",
+                "category": []
+            },
+            "Adorned Wreckage": {
+                "tier": "None",
+                "category": [
+                    "Industrial",
+                    "Mechanical"
+                ]
+            },
+            "Ancient Fort": {
+                "tier": "Yellow",
+                "category": [
+                    "Old World",
+                    "Technological"
+                ]
+            },
+            "Barren Clearing": {
+                "tier": "None",
+                "category": [
+                    "Arc"
+                ]
+            },
+            "Checkpoint": {
+                "tier": "Red",
+                "category": [
+                    "Mechanical"
+                ]
+            },
+            "Olive Grove": {
+                "tier": "None",
+                "category": [
+                    "Nature"
+                ]
+            },
+            "Pilgrims Peak": {
+                "tier": "Red",
+                "category": [
+                    "Technological",
+                    "Electrical"
+                ]
+            },
+            "Reinforced Reception": {
+                "tier": "None",
+                "category": [
+                    "Security",
+                    "Technological"
+                ]
+            },
+            "Ruined Homestead": {
+                "tier": "None",
+                "category": [
+                    "Old World",
+                    "Residential"
+                ]
+            },
+            "Trappers Glade": {
+                "tier": "None",
+                "category": [
+                    "Nature"
+                ]
+            },
+            "Village": {
+                "tier": "Yellow",
+                "category": [
+                    "Commercial",
+                    "Residential"
+                ]
+            },
+            "Warehouse Complex": {
+                "tier": "Yellow",
+                "category": [
+                    "Industrial"
+                ]
+            }
+        }
+    },
+    "Stella": {
+        "locations": {
+            "None": {
+                "tier": "None",
+                "category": []
+            },
+            "Assembly": {
+                "tier": "None",
+                "category": [
+                    "Technological",
+                    "Exodus"
+                ]
+            },
+            "Assembly Workshops": {
+                "tier": "Yellow",
+                "category": [
+                    "Technological"
+                ]
+            },
+            "Atrium": {
+                "tier": "None",
+                "category": [
+                    "Commercial"
+                ]
+            },
+            "Business Center": {
+                "tier": "None",
+                "category": [
+                    "Exodus",
+                    "Commercial"
+                ]
+            },
+            "Communications": {
+                "tier": "None",
+                "category": [
+                    "Electrical",
+                    "Technological"
+                ]
+            },
+            "Cultural Archives": {
+                "tier": "Red",
+                "category": [
+                    "Old World"
+                ]
+            },
+            "Eastern Tunnel": {
+                "tier": "None",
+                "category": [
+                    "Electrical",
+                    "Old World"
+                ]
+            },
+            "Loading Bay": {
+                "tier": "None",
+                "category": [
+                    "Industrial"
+                ]
+            },
+            "Lobby": {
+                "tier": "Yellow",
+                "category": [
+                    "Security",
+                    "Technological"
+                ]
+            },
+            "Lobby Metro": {
+                "tier": "None",
+                "category": [
+                    "Industrial",
+                    "Technological"
+                ]
+            },
+            "Medical Research": {
+                "tier": "Red",
+                "category": [
+                    "Medical",
+                    "Technological"
+                ]
+            },
+            "Red Checkpoint": {
+                "tier": "Yellow",
+                "category": [
+                    "Security"
+                ]
+            },
+            "Sandbox": {
+                "tier": "Yellow",
+                "category": [
+                    "Mechanical",
+                    "Electrical"
+                ]
+            },
+            "Seed Vault": {
+                "tier": "Red",
+                "category": [
+                    "Nature"
+                ]
+            },
+            "Western Tunnel": {
+                "tier": "None",
+                "category": [
+                    "Electrical"
+                ]
+            }
+        }
+    }
+}

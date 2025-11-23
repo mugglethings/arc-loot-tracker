@@ -1,0 +1,4 @@
+Pillow==12.0.0
+keyboard==0.13.5
+FreeSimpleGUI==5.1.1
+numpy==2.2.1
