@@ -2,14 +2,6 @@
 
 A Python application for logging game loot from containers using automated screenshot recognition.
 
-## TODO
-
-Make the program be able to recognize numbers for numbering quantity
-
-refine script?
-
-eventually make it web based... maybe?
-
 ## Requirements
 
 - Windows 11
