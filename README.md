@@ -1,17 +1,17 @@
-# ARC LOOT TABLE INPUT ENGINE (ARCLTIE)
+# ARC LOOT TRACKER - PyQt6 Version
 
-A Python application for logging game loot from containers using automated screenshot recognition.
+A modern PyQt6-based application for tracking loot from game containers with comprehensive analytics. Features automatic screenshot capture, item recognition, and advanced data analysis across 10 different views.
 
 ## Requirements
 
-- Windows 11
+- Windows 10/11
 - [Python 3.8+](https://www.python.org/downloads/)
-- Screen resolution: 1920x1080
+- Screen resolution: 2560x1440 (configured for this resolution)
 
 ## Installation
 
 1. Install Python dependencies:
-```bashd
+```bash
 pip install -r requirements.txt
 ```
 
@@ -19,13 +19,15 @@ pip install -r requirements.txt
 ```
 project/
 ├── data/
-│   ├── maps.json
-│   ├── containers.json
-│   ├── condition.json
-│   ├── grid.json
-│   └── items.json (created automatically if missing)
-├── loot_tracker.py
-└── requirements.txt
+│   ├── maps.json          - Map definitions with locations
+│   ├── containers.json    - Container types and properties
+│   ├── condition.json     - Game conditions (day/night/etc)
+│   ├── room.json          - Room/location definitions
+│   └── items/             - Item template images (auto-populated)
+├── loot_tracker2.py       - Main application
+├── loot_tracker.db        - SQLite database (auto-created)
+├── requirements.txt
+└── README.md
 ```
 
 ## How to Use
@@ -33,60 +35,113 @@ project/
 ### First Time Setup
 
 1. Ensure your `data/` folder contains:
-   - `maps.json` - Map names and their locations
-   - `containers.json` - List of container types
-   - `condition.json` - List of conditions (e.g., day/night)
-   - `grid.json` - Grid cell coordinates for screenshot analysis
+   - `maps.json` - Map definitions with location lists
+   - `containers.json` - Container types available in the game
+   - `condition.json` - Game conditions (e.g., night, day)
+   - `room.json` - Room/location definitions
 
 2. Run the application:
 ```bash
-python loot_tracker.py
+python loot_tracker2.py
 ```
 
-### Recording Loot
+The database (`loot_tracker.db`) and item templates folder will be created automatically.
 
-1. **Select Map**: Choose from dropdown menu (e.g., dam, buried, space)
-   - Click `Next` to continue
+## Main Features
 
-2. **Select Condition**: Choose game condition (e.g., night, day)
-   - Click `Restart` to go back to map selection
-   - Click `Next` to continue
+The application has 10 analysis tabs:
 
-3. **Select Location**: Choose location within the selected map
-   - Click `Restart` to go back to map selection
-   - Click `Next` to continue
+1. **📸 Quick Scan** - Start new loot scanning sessions
+   - Select map, condition, location, and container
+   - Configure grid size (1-48 cells)
+   - Automatically captures screenshot when dialog opens
 
-4. **Select Container**: Choose container type and grid size
-   - Enter number of grid cells to scan (1-12)
-   - Click `Start Scan`
+2. **📋 Today's Loot** - View all sessions from today
+   - Shows items found with quantities
+   - Delete sessions you want to remove
 
-5. **Capture Screenshot**:
-   - Position your game window to show the loot grid
-   - Press `F8` to capture screenshot
-   - Application automatically analyzes the grid
+3. **📜 Container History** - Filter sessions by container and time period
+   - Today, Last 7/14 days, or All time
 
-6. **Handle Unknown Items**:
-   - If an item is not recognized, you'll be prompted to name it
-   - Enter item name (e.g., `metal` for metal)
-   - The item template is saved for future recognition
+4. **🎯 Common vs Unique Loot** - Analyze container drops
+   - Common loot: appears in all map/location combinations
+   - Unique loot: appears only in specific locations
+   - Shows where unique items are found
 
-7. **Continue or Finish**:
-   - Choose "Yes" to scan another container in the same location
-   - Choose "No" to finish and start over
+5. **📊 Statistics** - Item frequency analytics
+   - Configurable time periods (7/14/30 days or all time)
+   - Grouped by item and map
 
-### Output Format
+6. **🔍 Advanced Loot Table** - Detailed container analysis
+   - Filter by map, location, and tier
+   - Shows min/max quantities and categories
 
-Loot data is saved to `loot.txt` as comma-separated values:
+7. **🔎 Item to Containers** - Reverse lookup
+   - See which containers have a specific item
+   - Shows drop percentages
 
-```
-map,condition,location,container,item1,quantity1,item2,quantity2,...
-```
+8. **📍 Container Locations** - Geographic analysis
+   - Where containers are found on maps
+   - Location, tier, and category information
 
-Example:
-```
-dam,night,control tower,server rack,metal,5,medical bandage,1,circuit board,2
-dam,night,water treatment,metal crate,key,1,bandage,1,grenade,1
-```
+9. **📦 Total Containers** - Global statistics
+   - How many times each container has been scanned
+
+10. **⚖️ Compare Containers** - Side-by-side analysis
+    - Compare two containers with optional map/location filters
+    - See common and unique items
+
+## Recording Loot Workflow
+
+1. Go to the **📸 Quick Scan** tab
+2. Fill in:
+   - Map (auto-populated from maps.json)
+   - Condition (day/night/etc)
+   - Location (auto-populated based on selected map)
+   - Container type
+   - Grid cells to scan (number of cells visible)
+
+3. Click **"🔍 Start Scan"**
+   - Dialog opens and automatically captures a screenshot
+   - Shows preview of each cell
+   - Uses template matching to recognize items
+
+4. For each cell:
+   - Review recognized item (or type new name)
+   - Enter quantity
+   - Click **Confirm Item** to save and move to next
+   - Or click **Skip Cell** to skip empty/unknown cells
+
+5. When done with all cells, click **Finish Scan**
+   - Session is saved to database with timestamp
+   - Item templates are updated for future recognition
+
+## Item Recognition
+
+- Uses template-based matching (MSE algorithm)
+- Saves recognized items as PNG templates in `data/items/`
+- Improves with more scanning - more templates = better recognition
+- Falls back to manual entry if item not recognized
+
+## Database
+
+Data is stored in SQLite database (`loot_tracker.db`) with two main tables:
+- `sessions` - Scan sessions with metadata (map, location, container, timestamp, etc)
+- `loot_items` - Individual items from each session
+
+All queries support filters and time ranges for flexible analysis.
+
+## Tips
+
+- **Improving Recognition**: The more you scan, the more item templates are saved, so recognition gets better over time
+- **Screenshot Quality**: Ensure your game window is properly positioned so the inventory grid is fully visible
+- **Database Backup**: Consider backing up `loot_tracker.db` regularly to preserve your data
+
+## Troubleshooting
+
+- **Items not recognized**: This is normal at first. Type the item name and continue - the template is saved for next time
+- **Wrong coordinates in screenshots**: Grid coordinates are fixed for 2560x1440 resolution. Adjust if using different resolution
+- **Application crashes**: Check `loot_tracker.log` for error details
 
 ## File Structure After First Run
 
@@ -96,31 +151,14 @@ project/
 │   ├── maps.json
 │   ├── containers.json
 │   ├── condition.json
-│   ├── grid.json
-│   └── items.json
-├── templates/
+│   ├── room.json
 │   └── items/
 │       ├── metal.png
 │       ├── bandage.png
-│       └── ... (auto-generated)
-├── loot.txt (output file)
-├── loot_tracker.log (application log)
-├── loot_tracker.py
-└── requirements.txt
+│       └── ... (auto-generated from scans)
+├── loot_tracker2.py       - Main application
+├── loot_tracker.db        - SQLite database with sessions and items
+├── loot_tracker.log       - Application log
+├── requirements.txt
+└── README.md
 ```
-
-## Tips
-
-- **Item Recognition**: The first time you encounter an item, you'll need to name it. Subsequent encounters will be automatic.
-- **Screenshot Timing**: Ensure the loot grid is fully visible and not obscured when pressing F8.
-
-## Troubleshooting
-
-- **No items recognized**: Check that `grid.json` coordinates match your screen resolution
-- **Wrong items detected**: Delete incorrect templates from `templates/items/` folder
-- **Application crashes**: Check `loot_tracker.log` for error details
-- **F8 not working**: Prob just spam it. Sometimes works after 3 clicks
-
-## Todo
-
-Script a table generation script using the data gathered

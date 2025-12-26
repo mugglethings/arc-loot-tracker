@@ -1,16 +1,17 @@
 {
     "condition": [
         "None",
-        "Night",
-        "Storm",
-        "Probes",
+        "Cold Snap",
+        "Electromagnetic Storm",
         "Harvester",
+        "Hidden Bunker",
+        "Husk Graveyard",
+        "Launch Tower Loot",
+        "Locked Gate",
+        "Lush Blooms",
         "Matriarch",
-        "Husks",
-        "Blooms",
-        "Caches",
-        "Tower",
-        "Bunker"
-
+        "Night Raid",
+        "Prospecting Probes",
+        "Uncovered Caches"
     ]
 }
