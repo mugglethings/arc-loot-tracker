@@ -117,7 +117,7 @@ class GridCalculator:
             calculated = self.get_cell_coords(idx)
             assert calculated == expected, f"Grid {idx+1} mismatch: {calculated} != {expected}"
         
-        logger.info("Grid validation passed [OK] (all 5 samples match)")
+        logger.info("Grid validation passed - all 5 samples match")
         return True
 
 
@@ -133,6 +133,27 @@ class DatabaseManager:
         """Initialize SQLite database with tables"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+        
+        # Check if sessions table exists and has old schema
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
+        table_exists = cursor.fetchone()
+        
+        if table_exists:
+            # Check if tier column exists
+            cursor.execute("PRAGMA table_info(sessions)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'tier' not in columns:
+                logger.info("Migrating database: adding tier and categories columns")
+                try:
+                    cursor.execute("ALTER TABLE sessions ADD COLUMN tier TEXT DEFAULT 'None'")
+                    cursor.execute("ALTER TABLE sessions ADD COLUMN categories TEXT DEFAULT '[]'")
+                    conn.commit()
+                    logger.info("Database migration completed")
+                except Exception as e:
+                    logger.error(f"Migration failed: {e}")
+                    conn.close()
+                    raise
         
         # Sessions table
         cursor.execute('''
@@ -211,6 +232,66 @@ class DatabaseManager:
         results = cursor.fetchall()
         conn.close()
         return results
+    
+    def get_container_loot_for_comparison(self, container, map_filter=None, location_filter=None):
+        """Get loot data for a container with optional map and location filters for comparison"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT 
+                l.item_name,
+                MIN(l.quantity) as min_qty,
+                MAX(l.quantity) as max_qty,
+                COUNT(*) as times_found
+            FROM loot_items l
+            JOIN sessions s ON l.session_id = s.id
+            WHERE s.container = ?
+        '''
+        params = [container]
+        
+        if map_filter and map_filter != "All":
+            query += ' AND s.map = ?'
+            params.append(map_filter)
+        
+        if location_filter and location_filter != "All":
+            query += ' AND s.location = ?'
+            params.append(location_filter)
+        
+        query += ' GROUP BY l.item_name'
+        
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+        
+        # Get total scans for percentage
+        total_query = 'SELECT COUNT(*) FROM sessions WHERE container = ?'
+        total_params = [container]
+        
+        if map_filter and map_filter != "All":
+            total_query += ' AND map = ?'
+            total_params.append(map_filter)
+        
+        if location_filter and location_filter != "All":
+            total_query += ' AND location = ?'
+            total_params.append(location_filter)
+        
+        cursor.execute(total_query, total_params)
+        total_scans = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        # Build result dict
+        loot_dict = {}
+        for item_name, min_qty, max_qty, times_found in results:
+            percentage = (times_found / total_scans * 100) if total_scans > 0 else 0
+            loot_dict[item_name] = {
+                'min_qty': min_qty,
+                'max_qty': max_qty,
+                'percentage': percentage,
+                'times_found': times_found
+            }
+        
+        return loot_dict, total_scans
     
     def delete_session(self, session_id):
         """Delete a session and its items"""
@@ -367,6 +448,192 @@ class DatabaseManager:
             })
         
         return processed
+    
+    def get_all_containers_stats(self):
+        """Get statistics for all containers"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                container,
+                COUNT(*) as times_scanned
+            FROM sessions
+            GROUP BY container
+            ORDER BY times_scanned DESC
+        ''')
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return results
+    
+    def get_all_items(self):
+        """Get list of all unique items found"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT DISTINCT item_name
+            FROM loot_items
+            ORDER BY item_name
+        ''')
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [item[0] for item in results]
+    
+    def get_item_container_stats(self, item_name):
+        """Get container statistics for a specific item"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                s.container,
+                MIN(l.quantity) as min_qty,
+                MAX(l.quantity) as max_qty,
+                COUNT(*) as times_found,
+                COUNT(DISTINCT s.id) as different_sessions
+            FROM loot_items l
+            JOIN sessions s ON l.session_id = s.id
+            WHERE l.item_name = ?
+            GROUP BY s.container
+            ORDER BY times_found DESC
+        ''', (item_name,))
+        
+        results = cursor.fetchall()
+        
+        # Get total scans across all containers
+        cursor.execute('''
+            SELECT COUNT(DISTINCT s.id)
+            FROM sessions s
+            WHERE EXISTS (
+                SELECT 1 FROM loot_items l 
+                WHERE l.session_id = s.id AND l.item_name = ?
+            )
+        ''', (item_name,))
+        
+        total_sessions = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        # Build result with percentages
+        processed = []
+        for container, min_qty, max_qty, times_found, different_sessions in results:
+            percentage = (different_sessions / total_sessions * 100) if total_sessions > 0 else 0
+            
+            processed.append({
+                'container': container,
+                'min_qty': min_qty,
+                'max_qty': max_qty,
+                'times_found': times_found,
+                'percentage': percentage
+            })
+        
+        return processed, total_sessions
+    
+    def get_sessions_by_container(self, container, days=None):
+        """Get sessions for a specific container with optional time filter"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT s.id, s.map, s.condition, s.location, s.container, s.tier, s.timestamp,
+                   GROUP_CONCAT(l.item_name || ' x' || l.quantity, ', ') as items
+            FROM sessions s
+            LEFT JOIN loot_items l ON s.id = l.session_id
+            WHERE s.container = ?
+        '''
+        params = [container]
+        
+        if days is not None:
+            if days == 0:
+                # Today only
+                query += ' AND DATE(s.timestamp) = DATE("now")'
+            else:
+                # Last N days
+                query += f' AND s.timestamp >= DATE("now", "-{days} days")'
+        
+        query += ' GROUP BY s.id ORDER BY s.timestamp DESC'
+        
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+        conn.close()
+        
+        return results
+    
+    def get_base_and_rare_loot(self, container):
+        """
+        Get common loot (appears on all map/location combos) and unique loot
+        Returns dicts with item info and location data for unique items
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get total unique map/location combinations for this container
+        cursor.execute('''
+            SELECT COUNT(DISTINCT map || '|' || location)
+            FROM sessions
+            WHERE container = ?
+        ''', (container,))
+        
+        total_locations = cursor.fetchone()[0]
+        
+        if total_locations == 0:
+            conn.close()
+            return {}, {}, {}
+        
+        # Get all items with their map/location distribution
+        cursor.execute('''
+            SELECT 
+                l.item_name,
+                MIN(l.quantity) as min_qty,
+                MAX(l.quantity) as max_qty,
+                COUNT(DISTINCT s.map || '|' || s.location) as location_count
+            FROM loot_items l
+            JOIN sessions s ON l.session_id = s.id
+            WHERE s.container = ?
+            GROUP BY l.item_name
+            ORDER BY location_count DESC
+        ''', (container,))
+        
+        items = cursor.fetchall()
+        
+        common_loot = {}
+        unique_loot = {}
+        
+        for item_name, min_qty, max_qty, location_count in items:
+            item_data = {
+                'min_qty': min_qty,
+                'max_qty': max_qty,
+                'locations_count': location_count
+            }
+            
+            # Common = appears on all map/location combos
+            if location_count == total_locations:
+                common_loot[item_name] = item_data
+            else:
+                unique_loot[item_name] = item_data
+        
+        # Get location data for unique loot
+        unique_locations = {}
+        if unique_loot:
+            for item_name in unique_loot.keys():
+                cursor.execute('''
+                    SELECT DISTINCT s.map, s.location
+                    FROM sessions s
+                    JOIN loot_items l ON s.id = l.session_id
+                    WHERE s.container = ? AND l.item_name = ?
+                ''', (container, item_name))
+                
+                locations = [f"{row[0]} - {row[1]}" for row in cursor.fetchall()]
+                unique_locations[item_name] = locations
+        
+        conn.close()
+        
+        return common_loot, unique_loot, unique_locations
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -463,18 +730,17 @@ class ScanDialog(QDialog):
         self.resize(600, 500)
         
         self.setup_ui()
-        self.setup_hotkey()
     
     def setup_ui(self):
         layout = QVBoxLayout()
         
         # Instructions
-        info = QLabel(f"Press F8 to capture {self.grid_count} cells (4 columns × {self.grid_count // 4 + (1 if self.grid_count % 4 else 0)} rows)")
+        info = QLabel(f"Scanning {self.grid_count} cells (4 columns × {self.grid_count // 4 + (1 if self.grid_count % 4 else 0)} rows)")
         info.setStyleSheet("font-size: 14px; padding: 10px; background: #e3f2fd;")
         layout.addWidget(info)
         
         # Status
-        self.status_label = QLabel("Waiting for F8...")
+        self.status_label = QLabel("Initializing...")
         self.status_label.setStyleSheet("font-size: 13px; padding: 8px;")
         layout.addWidget(self.status_label)
         
@@ -542,16 +808,11 @@ class ScanDialog(QDialog):
         
         self.setLayout(layout)
     
-    def setup_hotkey(self):
-        """Setup F8 hotkey for scanning"""
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.check_hotkey)
-        self.timer.start(100)
-    
-    def check_hotkey(self):
-        """Check if F8 is pressed"""
-        if keyboard.is_pressed('f8') and not self.cell_images:
-            self.capture_screen()
+    def showEvent(self, event):
+        """Capture screenshot automatically when dialog is shown"""
+        super().showEvent(event)
+        # Schedule capture to happen after dialog is fully shown
+        QTimer.singleShot(100, self.capture_screen)
     
     def capture_screen(self):
         """Capture screenshot and extract grid cells"""
@@ -577,7 +838,7 @@ class ScanDialog(QDialog):
         except Exception as e:
             logger.error(f"Capture failed: {e}")
             QMessageBox.critical(self, "Error", f"Failed to capture: {e}")
-            self.status_label.setText("Capture failed. Press F8 to retry.")
+            self.status_label.setText("Capture failed. Please try again.")
     
     def process_current_cell(self):
         """Process the current cell"""
@@ -661,7 +922,6 @@ class ScanDialog(QDialog):
     
     def closeEvent(self, event):
         """Cleanup on close"""
-        self.timer.stop()
         super().closeEvent(event)
 
 
@@ -734,9 +994,14 @@ class LootTrackerWindow(QMainWindow):
         tabs = QTabWidget()
         tabs.addTab(self.create_scan_tab(), "📸 Quick Scan")
         tabs.addTab(self.create_history_tab(), "📋 Today's Loot")
+        tabs.addTab(self.create_container_history_tab(), "📜 Container History")
+        tabs.addTab(self.create_base_loot_tab(), "🎯 Base vs Rare Loot")
         tabs.addTab(self.create_stats_tab(), "📊 Statistics")
         tabs.addTab(self.create_loot_table_tab(), "🔍 Advanced Loot Table")
+        tabs.addTab(self.create_item_containers_tab(), "🔎 Item to Containers")
         tabs.addTab(self.create_container_locations_tab(), "📍 Container Locations")
+        tabs.addTab(self.create_total_containers_tab(), "📦 Total Containers")
+        tabs.addTab(self.create_compare_tab(), "⚖️ Compare Containers")
         main_layout.addWidget(tabs)
     
     def create_scan_tab(self):
@@ -790,7 +1055,7 @@ class LootTrackerWindow(QMainWindow):
         layout.addWidget(form_group)
         
         # Scan button
-        scan_btn = QPushButton("🔍 Start Scan (F8)")
+        scan_btn = QPushButton("🔍 Start Scan")
         scan_btn.setStyleSheet("font-size: 16px; padding: 12px; background: #4CAF50; color: white;")
         scan_btn.clicked.connect(self.start_scan)
         layout.addWidget(scan_btn)
@@ -849,6 +1114,366 @@ class LootTrackerWindow(QMainWindow):
         
         widget.setLayout(layout)
         return widget
+    
+    def create_container_history_tab(self):
+        """Create the container history tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Header with filters
+        header_layout = QHBoxLayout()
+        
+        # Container selection
+        header_layout.addWidget(QLabel("Container:"))
+        self.container_history_combo = QComboBox()
+        self.container_history_combo.addItems(self.containers)
+        header_layout.addWidget(self.container_history_combo)
+        
+        # Period selection
+        header_layout.addWidget(QLabel("Period:"))
+        self.container_history_period = QComboBox()
+        self.container_history_period.addItems(["Today", "Last 7 Days", "Last 14 Days", "All Time"])
+        header_layout.addWidget(self.container_history_period)
+        
+        # Refresh button
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_container_history)
+        header_layout.addWidget(refresh_btn)
+        
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # Table
+        self.container_history_table = QTableWidget()
+        self.container_history_table.setColumnCount(8)
+        self.container_history_table.setHorizontalHeaderLabels([
+            "ID", "Map", "Condition", "Location", "Container", "Tier", "Items", "Actions"
+        ])
+        self.container_history_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.container_history_table)
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def create_base_loot_tab(self):
+        """Create the common vs unique loot tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Container selection
+        container_layout = QHBoxLayout()
+        container_layout.addWidget(QLabel("Container:"))
+        self.base_loot_container = QComboBox()
+        self.base_loot_container.addItems(self.containers)
+        container_layout.addWidget(self.base_loot_container)
+        
+        # Refresh button
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_base_loot)
+        container_layout.addWidget(refresh_btn)
+        
+        container_layout.addStretch()
+        layout.addLayout(container_layout)
+        
+        # Common loot section
+        common_group = QGroupBox("Common Loot (All Locations)")
+        common_layout = QVBoxLayout()
+        
+        self.base_loot_table = QTableWidget()
+        self.base_loot_table.setColumnCount(4)
+        self.base_loot_table.setHorizontalHeaderLabels([
+            "Item", "Min Qty", "Max Qty", "Locations Found"
+        ])
+        self.base_loot_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        common_layout.addWidget(self.base_loot_table)
+        
+        common_group.setLayout(common_layout)
+        layout.addWidget(common_group)
+        
+        # Unique loot section
+        rare_group = QGroupBox("Unique Loot (Specific Locations)")
+        rare_layout = QVBoxLayout()
+        
+        self.rare_loot_table = QTableWidget()
+        self.rare_loot_table.setColumnCount(5)
+        self.rare_loot_table.setHorizontalHeaderLabels([
+            "Item", "Min Qty", "Max Qty", "Locations Count", "Found at (Map - Location)"
+        ])
+        self.rare_loot_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.rare_loot_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        rare_layout.addWidget(self.rare_loot_table)
+        
+        rare_group.setLayout(rare_layout)
+        layout.addWidget(rare_group)
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def create_total_containers_tab(self):
+        """Create the total containers statistics tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Header
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("Container Statistics:"))
+        header_layout.addStretch()
+        
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_total_containers)
+        header_layout.addWidget(refresh_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Table
+        self.total_containers_table = QTableWidget()
+        self.total_containers_table.setColumnCount(2)
+        self.total_containers_table.setHorizontalHeaderLabels([
+            "Container", "Times Scanned"
+        ])
+        self.total_containers_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.total_containers_table)
+        
+        widget.setLayout(layout)
+        
+        # Load initial data
+        self.refresh_total_containers()
+        
+        return widget
+    
+    def refresh_total_containers(self):
+        """Refresh the total containers statistics"""
+        data = self.db.get_all_containers_stats()
+        
+        self.total_containers_table.setRowCount(len(data))
+        
+        for row, (container, times_scanned) in enumerate(data):
+            self.total_containers_table.setItem(row, 0, QTableWidgetItem(container))
+            self.total_containers_table.setItem(row, 1, QTableWidgetItem(str(times_scanned)))
+    
+    def create_compare_tab(self):
+        """Create the container comparison tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Selection area
+        selection_group = QGroupBox("Container Selection")
+        selection_layout = QGridLayout()
+        
+        # Container 1
+        selection_layout.addWidget(QLabel("Container 1:"), 0, 0)
+        self.compare_container1 = QComboBox()
+        self.compare_container1.addItems(self.containers)
+        selection_layout.addWidget(self.compare_container1, 0, 1)
+        
+        selection_layout.addWidget(QLabel("Map:"), 0, 2)
+        self.compare_map1 = QComboBox()
+        self.compare_map1.addItem("All")
+        self.compare_map1.addItems(list(self.maps_data.keys()))
+        self.compare_map1.currentTextChanged.connect(self.update_compare_locations1)
+        selection_layout.addWidget(self.compare_map1, 0, 3)
+        
+        selection_layout.addWidget(QLabel("Location:"), 0, 4)
+        self.compare_location1 = QComboBox()
+        self.compare_location1.addItem("All")
+        selection_layout.addWidget(self.compare_location1, 0, 5)
+        
+        # Container 2
+        selection_layout.addWidget(QLabel("Container 2:"), 1, 0)
+        self.compare_container2 = QComboBox()
+        self.compare_container2.addItems(self.containers)
+        if len(self.containers) > 1:
+            self.compare_container2.setCurrentIndex(1)
+        selection_layout.addWidget(self.compare_container2, 1, 1)
+        
+        selection_layout.addWidget(QLabel("Map:"), 1, 2)
+        self.compare_map2 = QComboBox()
+        self.compare_map2.addItem("All")
+        self.compare_map2.addItems(list(self.maps_data.keys()))
+        self.compare_map2.currentTextChanged.connect(self.update_compare_locations2)
+        selection_layout.addWidget(self.compare_map2, 1, 3)
+        
+        selection_layout.addWidget(QLabel("Location:"), 1, 4)
+        self.compare_location2 = QComboBox()
+        self.compare_location2.addItem("All")
+        selection_layout.addWidget(self.compare_location2, 1, 5)
+        
+        # Compare button
+        compare_btn = QPushButton("⚖️ Compare")
+        compare_btn.setStyleSheet("font-size: 14px; padding: 8px; background: #2196F3; color: white;")
+        compare_btn.clicked.connect(self.refresh_comparison)
+        selection_layout.addWidget(compare_btn, 2, 0, 1, 6)
+        
+        selection_group.setLayout(selection_layout)
+        layout.addWidget(selection_group)
+        
+        # Common items table
+        common_group = QGroupBox("Common Items (Found in Both)")
+        common_layout = QVBoxLayout()
+        
+        self.compare_common_table = QTableWidget()
+        self.compare_common_table.setColumnCount(5)
+        self.compare_common_table.setHorizontalHeaderLabels([
+            "Item", 
+            f"Container 1 Qty", 
+            f"Container 1 %",
+            f"Container 2 Qty",
+            f"Container 2 %"
+        ])
+        self.compare_common_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        common_layout.addWidget(self.compare_common_table)
+        
+        common_group.setLayout(common_layout)
+        layout.addWidget(common_group)
+        
+        # Unique items table
+        unique_group = QGroupBox("Unique Items (Found in Only One)")
+        unique_layout = QVBoxLayout()
+        
+        self.compare_unique_table = QTableWidget()
+        self.compare_unique_table.setColumnCount(4)
+        self.compare_unique_table.setHorizontalHeaderLabels([
+            "Item", "Found In", "Quantity", "% Chance"
+        ])
+        self.compare_unique_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        unique_layout.addWidget(self.compare_unique_table)
+        
+        unique_group.setLayout(unique_layout)
+        layout.addWidget(unique_group)
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def update_compare_locations1(self, map_name):
+        """Update location dropdown 1 based on selected map"""
+        self.compare_location1.clear()
+        self.compare_location1.addItem("All")
+        
+        if map_name != "All" and map_name in self.maps_data:
+            locations = list(self.maps_data[map_name].get('locations', {}).keys())
+            self.compare_location1.addItems(locations)
+    
+    def update_compare_locations2(self, map_name):
+        """Update location dropdown 2 based on selected map"""
+        self.compare_location2.clear()
+        self.compare_location2.addItem("All")
+        
+        if map_name != "All" and map_name in self.maps_data:
+            locations = list(self.maps_data[map_name].get('locations', {}).keys())
+            self.compare_location2.addItems(locations)
+    
+    def refresh_comparison(self):
+        """Refresh the container comparison"""
+        container1 = self.compare_container1.currentText()
+        map1 = self.compare_map1.currentText()
+        location1 = self.compare_location1.currentText()
+        container2 = self.compare_container2.currentText()
+        map2 = self.compare_map2.currentText()
+        location2 = self.compare_location2.currentText()
+        
+        if container1 == container2 and map1 == map2 and location1 == location2:
+            QMessageBox.warning(self, "Same Selection", "Please select different containers, maps, or locations to compare")
+            return
+        
+        # Get loot data for both containers
+        loot1, total1 = self.db.get_container_loot_for_comparison(container1, map1, location1)
+        loot2, total2 = self.db.get_container_loot_for_comparison(container2, map2, location2)
+        
+        if not loot1 and not loot2:
+            QMessageBox.information(self, "No Data", "No loot data found for selected containers")
+            return
+        
+        # Build descriptive names
+        name1 = container1
+        if map1 != "All":
+            name1 += f" ({map1}"
+            if location1 != "All":
+                name1 += f", {location1}"
+            name1 += ")"
+        elif location1 != "All":
+            name1 += f" ({location1})"
+        
+        name2 = container2
+        if map2 != "All":
+            name2 += f" ({map2}"
+            if location2 != "All":
+                name2 += f", {location2}"
+            name2 += ")"
+        elif location2 != "All":
+            name2 += f" ({location2})"
+        
+        # Update table headers with container names
+        self.compare_common_table.setHorizontalHeaderLabels([
+            "Item",
+            f"{name1} Qty",
+            f"{name1} %",
+            f"{name2} Qty",
+            f"{name2} %"
+        ])
+        
+        # Find common and unique items
+        all_items = set(loot1.keys()) | set(loot2.keys())
+        common_items = set(loot1.keys()) & set(loot2.keys())
+        unique_items = all_items - common_items
+        
+        # Populate common items table
+        self.compare_common_table.setRowCount(len(common_items))
+        for row, item in enumerate(sorted(common_items)):
+            data1 = loot1[item]
+            data2 = loot2[item]
+            
+            self.compare_common_table.setItem(row, 0, QTableWidgetItem(item))
+            
+            # Container 1 quantity
+            if data1['min_qty'] == data1['max_qty']:
+                qty1_text = str(data1['min_qty'])
+            else:
+                qty1_text = f"{data1['min_qty']}-{data1['max_qty']}"
+            self.compare_common_table.setItem(row, 1, QTableWidgetItem(qty1_text))
+            
+            # Container 1 percentage
+            self.compare_common_table.setItem(row, 2, QTableWidgetItem(f"{data1['percentage']:.1f}%"))
+            
+            # Container 2 quantity
+            if data2['min_qty'] == data2['max_qty']:
+                qty2_text = str(data2['min_qty'])
+            else:
+                qty2_text = f"{data2['min_qty']}-{data2['max_qty']}"
+            self.compare_common_table.setItem(row, 3, QTableWidgetItem(qty2_text))
+            
+            # Container 2 percentage
+            self.compare_common_table.setItem(row, 4, QTableWidgetItem(f"{data2['percentage']:.1f}%"))
+        
+        # Populate unique items table
+        self.compare_unique_table.setRowCount(len(unique_items))
+        unique_list = []
+        
+        for item in unique_items:
+            if item in loot1:
+                data = loot1[item]
+                found_in = name1
+            else:
+                data = loot2[item]
+                found_in = name2
+            
+            unique_list.append((item, found_in, data))
+        
+        # Sort by item name
+        unique_list.sort(key=lambda x: x[0])
+        
+        for row, (item, found_in, data) in enumerate(unique_list):
+            self.compare_unique_table.setItem(row, 0, QTableWidgetItem(item))
+            self.compare_unique_table.setItem(row, 1, QTableWidgetItem(found_in))
+            
+            # Quantity
+            if data['min_qty'] == data['max_qty']:
+                qty_text = str(data['min_qty'])
+            else:
+                qty_text = f"{data['min_qty']}-{data['max_qty']}"
+            self.compare_unique_table.setItem(row, 2, QTableWidgetItem(qty_text))
+            
+            # Percentage
+            self.compare_unique_table.setItem(row, 3, QTableWidgetItem(f"{data['percentage']:.1f}%"))
     
     def create_stats_tab(self):
         """Create the statistics tab"""
@@ -969,6 +1594,46 @@ class LootTrackerWindow(QMainWindow):
         widget.setLayout(layout)
         return widget
     
+    def create_item_containers_tab(self):
+        """Create the item to containers tab"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Item selection
+        item_layout = QHBoxLayout()
+        item_layout.addWidget(QLabel("Select Item:"))
+        self.item_combo = QComboBox()
+        self.item_combo.currentTextChanged.connect(self.refresh_item_containers)
+        item_layout.addWidget(self.item_combo)
+        
+        show_btn = QPushButton("🔍 Show Containers")
+        show_btn.clicked.connect(self.refresh_item_containers)
+        item_layout.addWidget(show_btn)
+        
+        item_layout.addStretch()
+        layout.addLayout(item_layout)
+        
+        # Info label
+        self.item_info_label = QLabel()
+        self.item_info_label.setStyleSheet("font-size: 12px; padding: 8px; background: #e3f2fd;")
+        layout.addWidget(self.item_info_label)
+        
+        # Table
+        self.item_containers_table = QTableWidget()
+        self.item_containers_table.setColumnCount(5)
+        self.item_containers_table.setHorizontalHeaderLabels([
+            "Container", "Min Qty", "Max Qty", "Times Found", "% Chance"
+        ])
+        self.item_containers_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.item_containers_table)
+        
+        widget.setLayout(layout)
+        
+        # Load initial items
+        self.load_items_combo()
+        
+        return widget
+    
     def update_loot_table_locations(self, map_name):
         """Update location dropdown based on selected map"""
         self.loot_table_location.clear()
@@ -1025,6 +1690,46 @@ class LootTrackerWindow(QMainWindow):
             
             self.container_locations_table.setItem(row, 4, QTableWidgetItem(str(item['times_found'])))
     
+    def load_items_combo(self):
+        """Load all items into the items combo box"""
+        items = self.db.get_all_items()
+        self.item_combo.clear()
+        if items:
+            self.item_combo.addItems(items)
+        else:
+            self.item_combo.addItem("No items found yet")
+    
+    def refresh_item_containers(self):
+        """Refresh the item containers table"""
+        item_name = self.item_combo.currentText()
+        
+        if item_name == "No items found yet":
+            self.item_containers_table.setRowCount(0)
+            self.item_info_label.setText("No data available")
+            return
+        
+        data, total_sessions = self.db.get_item_container_stats(item_name)
+        
+        self.item_containers_table.setRowCount(len(data))
+        
+        # Update info label
+        self.item_info_label.setText(f"Item: <b>{item_name}</b> | Found in <b>{total_sessions}</b> sessions")
+        
+        for row, item in enumerate(data):
+            self.item_containers_table.setItem(row, 0, QTableWidgetItem(item['container']))
+            
+            # Quantity range
+            if item['min_qty'] == item['max_qty']:
+                qty_text = str(item['min_qty'])
+            else:
+                qty_text = f"{item['min_qty']} - {item['max_qty']}"
+            self.item_containers_table.setItem(row, 1, QTableWidgetItem(str(item['min_qty'])))
+            self.item_containers_table.setItem(row, 2, QTableWidgetItem(str(item['max_qty'])))
+            
+            self.item_containers_table.setItem(row, 3, QTableWidgetItem(str(item['times_found'])))
+            
+            self.item_containers_table.setItem(row, 4, QTableWidgetItem(f"{item['percentage']:.1f}%"))
+    
     def on_map_changed(self, map_name):
         """Update locations when map changes"""
         if map_name in self.maps_data:
@@ -1077,6 +1782,9 @@ class LootTrackerWindow(QMainWindow):
             
             self.refresh_today_sessions()
             self.refresh_statistics()
+            self.refresh_total_containers()
+            self.load_items_combo()
+            self.refresh_base_loot()
             
         except Exception as e:
             logger.error(f"Failed to save scan: {e}")
@@ -1119,6 +1827,69 @@ class LootTrackerWindow(QMainWindow):
             delete_btn.clicked.connect(lambda checked, sid=session_id: self.delete_session(sid))
             self.history_table.setCellWidget(row, 7, delete_btn)
     
+    def refresh_container_history(self):
+        """Refresh the container history table"""
+        container = self.container_history_combo.currentText()
+        period_text = self.container_history_period.currentText()
+        
+        # Map period to days
+        days_map = {
+            "Today": 0,
+            "Last 7 Days": 7,
+            "Last 14 Days": 14,
+            "All Time": None
+        }
+        days = days_map.get(period_text)
+        
+        sessions = self.db.get_sessions_by_container(container, days)
+        
+        self.container_history_table.setRowCount(len(sessions))
+        
+        for row, session in enumerate(sessions):
+            session_id, map_name, condition, location, container_name, tier, timestamp, items = session
+            
+            self.container_history_table.setItem(row, 0, QTableWidgetItem(str(session_id)))
+            self.container_history_table.setItem(row, 1, QTableWidgetItem(map_name))
+            self.container_history_table.setItem(row, 2, QTableWidgetItem(condition))
+            self.container_history_table.setItem(row, 3, QTableWidgetItem(location))
+            self.container_history_table.setItem(row, 4, QTableWidgetItem(container_name))
+            self.container_history_table.setItem(row, 5, QTableWidgetItem(tier))
+            self.container_history_table.setItem(row, 6, QTableWidgetItem(items or "No items"))
+            
+            # Delete button
+            delete_btn = QPushButton("🗑️ Delete")
+            delete_btn.clicked.connect(lambda checked, sid=session_id: self.delete_session(sid))
+            self.container_history_table.setCellWidget(row, 7, delete_btn)
+    
+    def refresh_base_loot(self):
+        """Refresh the common vs rare loot tables"""
+        container = self.base_loot_container.currentText()
+        
+        common_loot, rare_loot, rare_locations = self.db.get_base_and_rare_loot(container)
+        
+        # Populate common loot table
+        self.base_loot_table.setRowCount(len(common_loot))
+        for row, (item_name, data) in enumerate(sorted(common_loot.items())):
+            self.base_loot_table.setItem(row, 0, QTableWidgetItem(item_name))
+            self.base_loot_table.setItem(row, 1, QTableWidgetItem(str(data['min_qty'])))
+            self.base_loot_table.setItem(row, 2, QTableWidgetItem(str(data['max_qty'])))
+            self.base_loot_table.setItem(row, 3, QTableWidgetItem(str(data['times_found'])))
+            self.base_loot_table.setItem(row, 4, QTableWidgetItem(f"{data['percentage']:.1f}%"))
+        
+        # Populate rare loot table
+        self.rare_loot_table.setRowCount(len(rare_loot))
+        for row, (item_name, data) in enumerate(sorted(rare_loot.items())):
+            self.rare_loot_table.setItem(row, 0, QTableWidgetItem(item_name))
+            self.rare_loot_table.setItem(row, 1, QTableWidgetItem(str(data['min_qty'])))
+            self.rare_loot_table.setItem(row, 2, QTableWidgetItem(str(data['max_qty'])))
+            self.rare_loot_table.setItem(row, 3, QTableWidgetItem(str(data['times_found'])))
+            self.rare_loot_table.setItem(row, 4, QTableWidgetItem(f"{data['percentage']:.1f}%"))
+            
+            # Build location string
+            locations = rare_locations.get(item_name, [])
+            location_text = ", ".join(locations)
+            self.rare_loot_table.setItem(row, 5, QTableWidgetItem(location_text))
+    
     def delete_session(self, session_id):
         """Delete a session"""
         reply = QMessageBox.question(
@@ -1132,6 +1903,9 @@ class LootTrackerWindow(QMainWindow):
                 self.db.delete_session(session_id)
                 self.refresh_today_sessions()
                 self.refresh_statistics()
+                self.refresh_total_containers()
+                self.load_items_combo()
+                self.refresh_base_loot()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to delete: {e}")
     
