@@ -15,21 +15,6 @@ A modern PyQt6-based application for tracking loot from game containers with com
 pip install -r requirements.txt
 ```
 
-2. Create the required data structure:
-```
-project/
-├── data/
-│   ├── maps.json          - Map definitions with locations
-│   ├── containers.json    - Container types and properties
-│   ├── condition.json     - Game conditions (day/night/etc)
-│   ├── room.json          - Room/location definitions
-│   └── items/             - Item template images (auto-populated)
-├── loot_tracker2.py       - Main application
-├── loot_tracker.db        - SQLite database (auto-created)
-├── requirements.txt
-└── README.md
-```
-
 ## How to Use
 
 ### First Time Setup
@@ -42,7 +27,7 @@ project/
 
 2. Run the application:
 ```bash
-python loot_tracker2.py
+python loot_tracker.py
 ```
 
 The database (`loot_tracker.db`) and item templates folder will be created automatically.
@@ -156,7 +141,7 @@ project/
 │       ├── metal.png
 │       ├── bandage.png
 │       └── ... (auto-generated from scans)
-├── loot_tracker2.py       - Main application
+├── loot_tracker.py       - Main application
 ├── loot_tracker.db        - SQLite database with sessions and items
 ├── loot_tracker.log       - Application log
 ├── requirements.txt

@@ -1,6 +1,6 @@
 """
-Modern Loot Tracker - PyQt6 Version
-Redesigned with better UX and modern features
+ARC Raiders Loot Tracker - PyQt6 Version
+Modern loot tracking application with database and advanced analysis
 """
 
 import sys
@@ -16,12 +16,11 @@ from PIL import Image, ImageGrab
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
-    QTabWidget, QMessageBox, QDialog, QDialogButtonBox, QLineEdit,
-    QTextEdit, QGroupBox, QGridLayout, QHeaderView, QSplitter, QFrame
+    QTabWidget, QMessageBox, QDialog, QLineEdit,
+    QTextEdit, QGroupBox, QGridLayout, QHeaderView
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QKeySequence, QShortcut, QPixmap, QImage
-import keyboard
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QPixmap, QImage
 
 # Logging setup
 logging.basicConfig(
@@ -45,39 +44,22 @@ MSE_THRESHOLD = 0.002
 # GRID CALCULATOR
 # ═══════════════════════════════════════════════════════════════
 class GridCalculator:
-    """
-    Static grid calculator with precise column positions
-    Layout: 4 columns × unlimited rows
-    """
+    """Static grid calculator with precise column positions"""
     
-    # Static column X-coordinates (start position for each column)
-    COL_X = [215, 353, 492, 631]
-    
-    # Row parameters
-    ROW_Y_START = 398  # Y-coordinate of first row
+    COL_X = [215, 353, 492, 631]  # X-coordinates for each column
+    ROW_Y_START = 398
     CELL_WIDTH = 119
     CELL_HEIGHT = 91
-    ROW_GAP = 48  # Vertical gap between rows
+    ROW_GAP = 48
     
     def __init__(self, resolution=(2560, 1440)):
         self.resolution = resolution
-        
-        # Calculate max rows that fit on screen
         available_height = resolution[1] - self.ROW_Y_START
         self.max_rows = available_height // (self.CELL_HEIGHT + self.ROW_GAP)
-        
         logger.info(f"Grid Calculator initialized for {resolution[0]}x{resolution[1]}")
-        logger.info(f"Cell: {self.CELL_WIDTH}x{self.CELL_HEIGHT}, Max rows: {self.max_rows}")
     
     def get_cell_coords(self, cell_index):
-        """
-        Get coordinates for a cell by index
-        Index 0-3: row 0, cols 0-3
-        Index 4-7: row 1, cols 0-3
-        etc.
-        
-        Returns: (x1, y1, x2, y2)
-        """
+        """Get (x1, y1, x2, y2) coordinates for a cell by index"""
         row = cell_index // 4
         col = cell_index % 4
         
@@ -88,36 +70,21 @@ class GridCalculator:
         
         return (x1, y1, x2, y2)
     
-    def get_all_cells(self, max_cells=48):
-        """
-        Generate all cell coordinates
-        Default max 48 cells = 12 rows × 4 cols
-        """
-        cells = []
-        for i in range(max_cells):
-            row = i // 4
-            if row >= self.max_rows:
-                break
-            cells.append(self.get_cell_coords(i))
-        
-        return cells
-    
     def validate_samples(self):
-        """Validate that our calculations match the provided samples"""
-        # Test samples
+        """Validate calculations match expected coordinates"""
         samples = {
-            0: (215, 398, 334, 489),  # Grid 1
-            1: (353, 398, 472, 489),  # Grid 2
-            2: (492, 398, 611, 489),  # Grid 3
-            3: (631, 398, 750, 489),  # Grid 4
-            4: (215, 537, 334, 628),  # Grid 5
+            0: (215, 398, 334, 489),
+            1: (353, 398, 472, 489),
+            2: (492, 398, 611, 489),
+            3: (631, 398, 750, 489),
+            4: (215, 537, 334, 628),
         }
         
         for idx, expected in samples.items():
             calculated = self.get_cell_coords(idx)
-            assert calculated == expected, f"Grid {idx+1} mismatch: {calculated} != {expected}"
+            assert calculated == expected, f"Grid {idx+1} mismatch"
         
-        logger.info("Grid validation passed - all 5 samples match")
+        logger.info("Grid validation passed")
         return True
 
 
@@ -134,26 +101,18 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Check if sessions table exists and has old schema
+        # Check for old schema and migrate
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
-        table_exists = cursor.fetchone()
-        
-        if table_exists:
-            # Check if tier column exists
+        if cursor.fetchone():
             cursor.execute("PRAGMA table_info(sessions)")
             columns = [col[1] for col in cursor.fetchall()]
             
             if 'tier' not in columns:
-                logger.info("Migrating database: adding tier and categories columns")
-                try:
-                    cursor.execute("ALTER TABLE sessions ADD COLUMN tier TEXT DEFAULT 'None'")
-                    cursor.execute("ALTER TABLE sessions ADD COLUMN categories TEXT DEFAULT '[]'")
-                    conn.commit()
-                    logger.info("Database migration completed")
-                except Exception as e:
-                    logger.error(f"Migration failed: {e}")
-                    conn.close()
-                    raise
+                logger.info("Migrating database schema...")
+                cursor.execute("ALTER TABLE sessions ADD COLUMN tier TEXT DEFAULT 'None'")
+                cursor.execute("ALTER TABLE sessions ADD COLUMN categories TEXT DEFAULT '[]'")
+                conn.commit()
+                logger.info("Migration completed")
         
         # Sessions table
         cursor.execute('''
@@ -190,14 +149,12 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         try:
-            # Insert session
             cursor.execute(
                 'INSERT INTO sessions (map, condition, location, container, tier, categories) VALUES (?, ?, ?, ?, ?, ?)',
                 (map_name, condition, location, container, tier, json.dumps(categories))
             )
             session_id = cursor.lastrowid
             
-            # Insert items
             for item_name, quantity in items.items():
                 cursor.execute(
                     'INSERT INTO loot_items (session_id, item_name, quantity) VALUES (?, ?, ?)',
@@ -233,8 +190,8 @@ class DatabaseManager:
         conn.close()
         return results
     
-    def get_container_loot_for_comparison(self, container, map_filter=None, location_filter=None):
-        """Get loot data for a container with optional map and location filters for comparison"""
+    def get_container_loot_for_comparison(self, container, map_filter=None, location_filter=None, condition_filter=None):
+        """Get loot data for a container with optional map, location and condition filters for comparison"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -258,6 +215,10 @@ class DatabaseManager:
             query += ' AND s.location = ?'
             params.append(location_filter)
         
+        if condition_filter and condition_filter != "All":
+            query += ' AND s.condition = ?'
+            params.append(condition_filter)
+        
         query += ' GROUP BY l.item_name'
         
         cursor.execute(query, params)
@@ -274,6 +235,10 @@ class DatabaseManager:
         if location_filter and location_filter != "All":
             total_query += ' AND location = ?'
             total_params.append(location_filter)
+        
+        if condition_filter and condition_filter != "All":
+            total_query += ' AND condition = ?'
+            total_params.append(condition_filter)
         
         cursor.execute(total_query, total_params)
         total_scans = cursor.fetchone()[0]
@@ -811,7 +776,6 @@ class ScanDialog(QDialog):
     def showEvent(self, event):
         """Capture screenshot automatically when dialog is shown"""
         super().showEvent(event)
-        # Schedule capture to happen after dialog is fully shown
         QTimer.singleShot(100, self.capture_screen)
     
     def capture_screen(self):
@@ -823,22 +787,20 @@ class ScanDialog(QDialog):
             screenshot = ImageGrab.grab()
             img_array = np.array(screenshot.convert('RGB'), dtype=np.float32) / 255.0
             
-            # Extract cells using grid calculator
             self.cell_images = []
             for idx in range(self.grid_count):
                 x1, y1, x2, y2 = self.grid_calculator.get_cell_coords(idx)
                 cell = img_array[y1:y2, x1:x2]
                 self.cell_images.append(cell)
-                logger.info(f"Cell {idx}: ({x1},{y1}) to ({x2},{y2}) - shape {cell.shape}")
             
-            self.status_label.setText(f"Captured {len(self.cell_images)} cells. Processing...")
+            self.status_label.setText(f"Captured {len(self.cell_images)} cells")
             self.current_cell = 0
             self.process_current_cell()
             
         except Exception as e:
             logger.error(f"Capture failed: {e}")
             QMessageBox.critical(self, "Error", f"Failed to capture: {e}")
-            self.status_label.setText("Capture failed. Please try again.")
+            self.status_label.setText("Capture failed")
     
     def process_current_cell(self):
         """Process the current cell"""
@@ -847,8 +809,6 @@ class ScanDialog(QDialog):
             return
         
         cell_img = self.cell_images[self.current_cell]
-        
-        # Calculate row/col for display
         row = self.current_cell // 4
         col = self.current_cell % 4
         
@@ -885,14 +845,10 @@ class ScanDialog(QDialog):
         qty = self.qty_input.value()
         cell_img = self.cell_images[self.current_cell]
         
-        # Save template
         self.matcher.save_template(name, cell_img)
-        
-        # Add to loot
         self.loot_data[name] = self.loot_data.get(name, 0) + qty
         logger.info(f"Added: {name} x{qty}")
         
-        # Move to next cell
         self.current_cell += 1
         self.name_input.clear()
         self.qty_input.setValue(1)
@@ -931,7 +887,7 @@ class ScanDialog(QDialog):
 class LootTrackerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Modern Loot Tracker")
+        self.setWindowTitle("ARC Raiders Loot Tracker")
         self.resize(900, 700)
         
         # Initialize components
@@ -956,21 +912,18 @@ class LootTrackerWindow(QMainWindow):
     def load_config_data(self):
         """Load configuration files"""
         try:
-            # Maps
             with open(os.path.join(DATA_DIR, 'maps.json'), 'r') as f:
                 self.maps_data = json.load(f)
             
-            # Containers
             with open(os.path.join(DATA_DIR, 'containers.json'), 'r') as f:
                 data = json.load(f)
                 self.containers = data.get('containers', [])
             
-            # Conditions
             with open(os.path.join(DATA_DIR, 'condition.json'), 'r') as f:
                 data = json.load(f)
                 self.conditions = data.get('condition', [])
             
-            logger.info("Configuration loaded successfully")
+            logger.info("Configuration loaded")
             
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
@@ -986,7 +939,7 @@ class LootTrackerWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         
         # Title
-        title = QLabel("🎮 Loot Tracker")
+        title = QLabel("🎮 ARC Raiders Loot Tracker")
         title.setStyleSheet("font-size: 24px; font-weight: bold; padding: 10px;")
         main_layout.addWidget(title)
         
@@ -1190,14 +1143,14 @@ class LootTrackerWindow(QMainWindow):
         common_group.setLayout(common_layout)
         layout.addWidget(common_group)
         
-        # Unique loot section
-        rare_group = QGroupBox("Unique Loot (Specific Locations)")
+        # Rare loot
+        rare_group = QGroupBox("Rare Loot (Location Specific)")
         rare_layout = QVBoxLayout()
         
         self.rare_loot_table = QTableWidget()
         self.rare_loot_table.setColumnCount(5)
         self.rare_loot_table.setHorizontalHeaderLabels([
-            "Item", "Min Qty", "Max Qty", "Locations Count", "Found at (Map - Location)"
+            "Item", "Min Qty", "Max Qty", "Locations Count", "Found At"
         ])
         self.rare_loot_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.rare_loot_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
@@ -1266,17 +1219,23 @@ class LootTrackerWindow(QMainWindow):
         self.compare_container1.addItems(self.containers)
         selection_layout.addWidget(self.compare_container1, 0, 1)
         
-        selection_layout.addWidget(QLabel("Map:"), 0, 2)
+        selection_layout.addWidget(QLabel("Condition:"), 0, 2)
+        self.compare_condition1 = QComboBox()
+        self.compare_condition1.addItem("All")
+        self.compare_condition1.addItems(self.conditions)
+        selection_layout.addWidget(self.compare_condition1, 0, 3)
+        
+        selection_layout.addWidget(QLabel("Map:"), 0, 4)
         self.compare_map1 = QComboBox()
         self.compare_map1.addItem("All")
         self.compare_map1.addItems(list(self.maps_data.keys()))
         self.compare_map1.currentTextChanged.connect(self.update_compare_locations1)
-        selection_layout.addWidget(self.compare_map1, 0, 3)
+        selection_layout.addWidget(self.compare_map1, 0, 5)
         
-        selection_layout.addWidget(QLabel("Location:"), 0, 4)
+        selection_layout.addWidget(QLabel("Location:"), 0, 6)
         self.compare_location1 = QComboBox()
         self.compare_location1.addItem("All")
-        selection_layout.addWidget(self.compare_location1, 0, 5)
+        selection_layout.addWidget(self.compare_location1, 0, 7)
         
         # Container 2
         selection_layout.addWidget(QLabel("Container 2:"), 1, 0)
@@ -1286,23 +1245,29 @@ class LootTrackerWindow(QMainWindow):
             self.compare_container2.setCurrentIndex(1)
         selection_layout.addWidget(self.compare_container2, 1, 1)
         
-        selection_layout.addWidget(QLabel("Map:"), 1, 2)
+        selection_layout.addWidget(QLabel("Condition:"), 1, 2)
+        self.compare_condition2 = QComboBox()
+        self.compare_condition2.addItem("All")
+        self.compare_condition2.addItems(self.conditions)
+        selection_layout.addWidget(self.compare_condition2, 1, 3)
+        
+        selection_layout.addWidget(QLabel("Map:"), 1, 4)
         self.compare_map2 = QComboBox()
         self.compare_map2.addItem("All")
         self.compare_map2.addItems(list(self.maps_data.keys()))
         self.compare_map2.currentTextChanged.connect(self.update_compare_locations2)
-        selection_layout.addWidget(self.compare_map2, 1, 3)
+        selection_layout.addWidget(self.compare_map2, 1, 5)
         
-        selection_layout.addWidget(QLabel("Location:"), 1, 4)
+        selection_layout.addWidget(QLabel("Location:"), 1, 6)
         self.compare_location2 = QComboBox()
         self.compare_location2.addItem("All")
-        selection_layout.addWidget(self.compare_location2, 1, 5)
+        selection_layout.addWidget(self.compare_location2, 1, 7)
         
         # Compare button
         compare_btn = QPushButton("⚖️ Compare")
         compare_btn.setStyleSheet("font-size: 14px; padding: 8px; background: #2196F3; color: white;")
         compare_btn.clicked.connect(self.refresh_comparison)
-        selection_layout.addWidget(compare_btn, 2, 0, 1, 6)
+        selection_layout.addWidget(compare_btn, 2, 0, 1, 8)
         
         selection_group.setLayout(selection_layout)
         layout.addWidget(selection_group)
@@ -1365,19 +1330,21 @@ class LootTrackerWindow(QMainWindow):
     def refresh_comparison(self):
         """Refresh the container comparison"""
         container1 = self.compare_container1.currentText()
+        condition1 = self.compare_condition1.currentText()
         map1 = self.compare_map1.currentText()
         location1 = self.compare_location1.currentText()
         container2 = self.compare_container2.currentText()
+        condition2 = self.compare_condition2.currentText()
         map2 = self.compare_map2.currentText()
         location2 = self.compare_location2.currentText()
         
-        if container1 == container2 and map1 == map2 and location1 == location2:
-            QMessageBox.warning(self, "Same Selection", "Please select different containers, maps, or locations to compare")
+        if container1 == container2 and condition1 == condition2 and map1 == map2 and location1 == location2:
+            QMessageBox.warning(self, "Same Selection", "Please select different containers, conditions, maps, or locations to compare")
             return
         
         # Get loot data for both containers
-        loot1, total1 = self.db.get_container_loot_for_comparison(container1, map1, location1)
-        loot2, total2 = self.db.get_container_loot_for_comparison(container2, map2, location2)
+        loot1, total1 = self.db.get_container_loot_for_comparison(container1, map1, location1, condition1)
+        loot2, total2 = self.db.get_container_loot_for_comparison(container2, map2, location2, condition2)
         
         if not loot1 and not loot2:
             QMessageBox.information(self, "No Data", "No loot data found for selected containers")
@@ -1385,7 +1352,16 @@ class LootTrackerWindow(QMainWindow):
         
         # Build descriptive names
         name1 = container1
-        if map1 != "All":
+        if condition1 != "All":
+            name1 += f" ({condition1}"
+            if map1 != "All":
+                name1 += f", {map1}"
+                if location1 != "All":
+                    name1 += f", {location1}"
+            elif location1 != "All":
+                name1 += f", {location1}"
+            name1 += ")"
+        elif map1 != "All":
             name1 += f" ({map1}"
             if location1 != "All":
                 name1 += f", {location1}"
@@ -1394,7 +1370,16 @@ class LootTrackerWindow(QMainWindow):
             name1 += f" ({location1})"
         
         name2 = container2
-        if map2 != "All":
+        if condition2 != "All":
+            name2 += f" ({condition2}"
+            if map2 != "All":
+                name2 += f", {map2}"
+                if location2 != "All":
+                    name2 += f", {location2}"
+            elif location2 != "All":
+                name2 += f", {location2}"
+            name2 += ")"
+        elif map2 != "All":
             name2 += f" ({map2}"
             if location2 != "All":
                 name2 += f", {location2}"
@@ -1774,12 +1759,11 @@ class LootTrackerWindow(QMainWindow):
             
             session_id = self.db.add_session(map_name, condition, location, container, tier, categories, loot_data)
             
+            # Log success without popup
             items_str = ', '.join([f"{name} x{qty}" for name, qty in loot_data.items()])
-            QMessageBox.information(
-                self, "Success",
-                f"Scan saved!\n\nSession ID: {session_id}\nTier: {tier}\nCategories: {', '.join(categories) if categories else 'None'}\nItems: {items_str}"
-            )
+            logger.info(f"Scan saved - Session {session_id}: {items_str}")
             
+            # Refresh all relevant tabs
             self.refresh_today_sessions()
             self.refresh_statistics()
             self.refresh_total_containers()
@@ -1873,8 +1857,7 @@ class LootTrackerWindow(QMainWindow):
             self.base_loot_table.setItem(row, 0, QTableWidgetItem(item_name))
             self.base_loot_table.setItem(row, 1, QTableWidgetItem(str(data['min_qty'])))
             self.base_loot_table.setItem(row, 2, QTableWidgetItem(str(data['max_qty'])))
-            self.base_loot_table.setItem(row, 3, QTableWidgetItem(str(data['times_found'])))
-            self.base_loot_table.setItem(row, 4, QTableWidgetItem(f"{data['percentage']:.1f}%"))
+            self.base_loot_table.setItem(row, 3, QTableWidgetItem(str(data['locations_count'])))
         
         # Populate rare loot table
         self.rare_loot_table.setRowCount(len(rare_loot))
@@ -1882,12 +1865,12 @@ class LootTrackerWindow(QMainWindow):
             self.rare_loot_table.setItem(row, 0, QTableWidgetItem(item_name))
             self.rare_loot_table.setItem(row, 1, QTableWidgetItem(str(data['min_qty'])))
             self.rare_loot_table.setItem(row, 2, QTableWidgetItem(str(data['max_qty'])))
-            self.rare_loot_table.setItem(row, 3, QTableWidgetItem(str(data['times_found'])))
-            self.rare_loot_table.setItem(row, 4, QTableWidgetItem(f"{data['percentage']:.1f}%"))
+            self.rare_loot_table.setItem(row, 3, QTableWidgetItem(str(data['locations_count'])))
             
             # Build location string
             locations = rare_locations.get(item_name, [])
             location_text = ", ".join(locations)
+            self.rare_loot_table.setItem(row, 4, QTableWidgetItem(location_text))
             self.rare_loot_table.setItem(row, 5, QTableWidgetItem(location_text))
     
     def delete_session(self, session_id):
