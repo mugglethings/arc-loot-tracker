@@ -21,17 +21,11 @@ pip install -r requirements.txt
 
 1. Ensure your `data/` folder contains:
    - `maps.json` - Map definitions with location lists
-   - `containers.json` - Container types available in the game
-   - `condition.json` - Game conditions (e.g., night, day)
-   - `room.json` - Room/location definitions
 
 2. Run the application:
 ```bash
 python loot_tracker.py
 ```
-
-The database (`loot_tracker.db`) and item templates folder will be created automatically.
-
 ## Main Features
 
 The application has 10 analysis tabs:
@@ -134,9 +128,6 @@ All queries support filters and time ranges for flexible analysis.
 project/
 ├── data/
 │   ├── maps.json
-│   ├── containers.json
-│   ├── condition.json
-│   ├── room.json
 │   └── items/
 │       ├── metal.png
 │       ├── bandage.png
